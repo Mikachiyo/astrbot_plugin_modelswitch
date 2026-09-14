@@ -1,0 +1,14 @@
+{
+  "enable": {
+    "type": "bool",
+    "title": "启用模型热切换",
+    "description": "是否向大模型开放 switch_model 工具与场景提示词注入。",
+    "default": true
+  },
+  "enable_prompt_injection": {
+    "type": "bool",
+    "title": "启用场景提示词注入",
+    "description": "是否在 system prompt 中注入当前可用模型与场景决策指南。",
+    "default": true
+  }
+}

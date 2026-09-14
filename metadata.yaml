@@ -1,0 +1,6 @@
+name: astrbot_plugin_modelswitch
+display_name: 模型场景热切换
+author: Mikachiyo
+version: v2.0.0
+desc: 根据对话场景自主热切换LLM模型。支持Dashboard模型扫描、场景备注定制、动态Tool Schema与会话隔离切换。
+repo: https://github.com/Mikachiyo/astrbot_plugin_modelswitch
