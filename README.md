@@ -24,11 +24,8 @@
 ### 4. 现代化管理后台（Dashboard）
 - 内置 `pages/admin/index.html`，由 AstrBot 仪表盘自动挂载；
 - 全量接入官方 `window.AstrBotPluginPage` Bridge SDK，安全无跨域；
-- 打开即自动扫描当前 AstrBot 实例中所有配置好的 `CHAT_COMPLETION` 提供商；
+- 打开即自动扫描当前 AstrBot 实例中所有配置好的 `CHAT_COMPLETION` 提供商，并自动清理已从配置中移除的过期模型；
 - 提供常用场景预设快捷标签（“日常与涩涩首选”、“撞审查备选”、“深度推理与代码”等），支持单条保存与一键批量保存。
-
-### 5. 游戏显存一键释放
-- 保留 `unload_comfy` 工具，方便小羊玩游戏时随时一键击杀后台 ComfyUI 释放 VRAM。
 
 ---
 
@@ -37,7 +34,6 @@
 | 工具名 | 入参 | 功能说明 |
 | :--- | :--- | :--- |
 | `switch_model` | `provider_id` (动态 enum) | 根据场景自主切换当前会话的模型提供商 |
-| `unload_comfy` | 无 | 释放显卡显存用于玩游戏（杀掉 ComfyUI 进程） |
 
 ---
 
