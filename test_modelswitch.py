@@ -166,12 +166,10 @@ def test_suite():
     m.ModelSwitchPlugin._instance = plugin
     run_async(plugin.initialize())
 
-    assert len(ctx.tools) == 2, f"应该注册2个工具，实际注册: {len(ctx.tools)}"
+    assert len(ctx.tools) == 1, f"开源纯净版应该注册1个工具，实际注册: {len(ctx.tools)}"
     switch_tool = next(t for t in ctx.tools if t.name == "switch_model")
-    unload_tool = next(t for t in ctx.tools if t.name == "unload_comfy")
     assert switch_tool is not None
-    assert unload_tool is not None
-    print("✅ 1. 插件初始化与工具复数注册通过")
+    print("✅ 1. 插件初始化与工具注册通过")
 
     # 2. 测试模型扫描与持久化
     all_models = run_async(plugin.get_all_models())
