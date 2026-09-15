@@ -181,6 +181,15 @@ def test_suite():
     assert "gemini-CPA/gemini-pro-agent" in pids
     print("✅ 2. 模型扫描与数据库合并存储通过")
 
+    # 2.1 测试删除配置后重新扫描，自动清理幽灵模型
+    mock_cfg["provider"] = [p for p in mock_cfg["provider"] if p["id"] != "deepseek/v4-flash"]
+    with open(TMP_ROOT / "cmd_config.json", "w", encoding="utf-8") as f:
+        json.dump(mock_cfg, f)
+    refreshed = run_async(plugin.sync_and_refresh())
+    assert len(refreshed) == 2, f"删除一个模型后应只剩2个，实际: {len(refreshed)}"
+    assert "deepseek/v4-flash" not in [m["provider_id"] for m in refreshed]
+    print("✅ 2.1 幽灵模型自动清理机制通过")
+
     # 3. 测试保存开启模型与 Tool Schema 动态编译
     run_async(plugin.save_model_config(
         provider_id="gemini-CPA/gemini-3.8-flash-high",
@@ -242,7 +251,7 @@ def test_suite():
     api_get_models = ctx.web_apis[f"{m.API_PREFIX}/models"][0]
     api_res = run_async(api_get_models())
     assert api_res["success"] is True
-    assert len(api_res["models"]) == 3
+    assert len(api_res["models"]) == 2
     print("✅ 7. 仪表盘 Web API 数据接口测试通过")
 
     # 7. 测试 terminate 卸载钩子
