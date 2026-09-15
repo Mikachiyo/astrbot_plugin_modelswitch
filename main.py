@@ -309,32 +309,41 @@ class ModelSwitchPlugin(Star):
         return results
 
     async def sync_and_refresh(self) -> list[dict[str, Any]]:
-        """将扫描到的提供商与本地数据库合并同步。"""
+        """将扫描到的提供商与本地数据库合并同步，并自动清理已从配置中删除的过期模型。"""
         scanned = self.scan_configured_providers()
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        async with self._db_lock:
-            with sqlite3.connect(str(self.db_path)) as conn:
-                cur = conn.cursor()
-                for item in scanned:
-                    pid = item["provider_id"]
-                    cur.execute("SELECT provider_id FROM model_configs WHERE provider_id = ?", (pid,))
-                    if not cur.fetchone():
-                        # 新模型：默认关闭，插入新记录
-                        cur.execute(
-                            """
-                            INSERT INTO model_configs (provider_id, model_name, source_id, enabled, scenario, priority, updated_at)
-                            VALUES (?, ?, ?, 0, '', 0, ?)
-                            """,
-                            (pid, item["model_name"], item["source_id"], now),
-                        )
-                    else:
-                        # 已存在：更新 model_name
-                        cur.execute(
-                            "UPDATE model_configs SET model_name = ?, source_id = ? WHERE provider_id = ?",
-                            (item["model_name"], item["source_id"], pid),
-                        )
-                conn.commit()
+        if scanned:
+            scanned_pids = {item["provider_id"] for item in scanned}
+            async with self._db_lock:
+                with sqlite3.connect(str(self.db_path)) as conn:
+                    cur = conn.cursor()
+                    for item in scanned:
+                        pid = item["provider_id"]
+                        cur.execute("SELECT provider_id FROM model_configs WHERE provider_id = ?", (pid,))
+                        if not cur.fetchone():
+                            # 新模型：默认关闭，插入新记录
+                            cur.execute(
+                                """
+                                INSERT INTO model_configs (provider_id, model_name, source_id, enabled, scenario, priority, updated_at)
+                                VALUES (?, ?, ?, 0, '', 0, ?)
+                                """,
+                                (pid, item["model_name"], item["source_id"], now),
+                            )
+                        else:
+                            # 已存在：更新 model_name
+                            cur.execute(
+                                "UPDATE model_configs SET model_name = ?, source_id = ? WHERE provider_id = ?",
+                                (item["model_name"], item["source_id"], pid),
+                            )
+
+                    # 自动清理已在实际配置中删除的幽灵模型
+                    placeholders = ",".join("?" for _ in scanned_pids)
+                    cur.execute(
+                        f"DELETE FROM model_configs WHERE provider_id NOT IN ({placeholders})",
+                        tuple(scanned_pids),
+                    )
+                    conn.commit()
 
         # 更新工具 Schema
         enabled_models = await self.get_enabled_models()
