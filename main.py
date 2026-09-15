@@ -7,8 +7,7 @@
 1. 动态 Tool Schema：根据已开启的模型列表和场景备注，实时编译 switch_model 的 enum 和 description；
 2. 场景指南注入：在 system prompt 中注入当前可用模型及各自适用场景，引导模型自主决策；
 3. 会话隔离热切：通过 provider_manager.set_provider(umo=umo) 实现当前对话单会话隔离切换；
-4. 优雅管理后台：提供 pages/admin 面板，一键扫描已有模型、开关白名单、定制场景备注；
-5. 包含 UnloadComfyTool 游戏显存释放工具。
+4. 优雅管理后台：提供 pages/admin 面板，一键扫描已有模型、开关白名单、定制场景备注。
 """
 
 from __future__ import annotations
@@ -134,30 +133,6 @@ class SwitchModelTool(FunctionTool):
             return f"❌ 切换失败：{exc}"
 
 
-class UnloadComfyTool(FunctionTool):
-    """unload_comfy: 释放 ComfyUI 显存。"""
-
-    def __init__(self) -> None:
-        super().__init__(
-            name="unload_comfy",
-            description="释放显卡显存用于玩游戏。杀掉ComfyUI进程，下次画图时会自动重启。",
-            parameters={"type": "object", "properties": {}, "required": []},
-        )
-
-    async def call(self, context, **kwargs) -> ToolExecResult:
-        try:
-            subprocess.run('taskkill /f /fi "WINDOWTITLE eq *ComfyUI*" 2>nul', shell=True, timeout=3)
-            await asyncio.sleep(1)
-            import urllib.request
-            try:
-                urllib.request.urlopen("http://127.0.0.1:8188", timeout=1)
-                return "⚠️ ComfyUI 仍在运行中，可能需要手动检查关闭。"
-            except Exception:
-                return "✅ ComfyUI 已安全关闭，显存已成功释放！下次画图时会自动重新启动。"
-        except Exception as exc:
-            return f"❌ 释放显存失败: {exc}"
-
-
 # ---------------------------------------------------------------------------
 # 插件主类 Star
 # ---------------------------------------------------------------------------
@@ -182,8 +157,7 @@ class ModelSwitchPlugin(Star):
 
         # 创建并注册工具
         self.switch_tool = SwitchModelTool(self)
-        self.unload_tool = UnloadComfyTool()
-        context.add_llm_tools(self.switch_tool, self.unload_tool)
+        context.add_llm_tools(self.switch_tool)
 
         # 注册 Web API
         self._register_web_apis()
