@@ -369,6 +369,8 @@ class ModelSwitchPlugin(Star):
         register(f"{API_PREFIX}/models", self.api_get_models, ["GET"], "获取并同步模型列表")
         register(f"{API_PREFIX}/models/save", self.api_save_model, ["POST"], "保存单个模型设置")
         register(f"{API_PREFIX}/models/batch_save", self.api_batch_save, ["POST"], "批量保存模型设置")
+        register(f"{API_PREFIX}/sessions", self.api_get_sessions, ["GET"], "获取活跃会话及其当前运行模型")
+        register(f"{API_PREFIX}/session/switch", self.api_switch_session_model, ["POST"], "手动热切换指定会话模型")
 
     async def api_get_models(self):
         try:
@@ -408,6 +410,109 @@ class ModelSwitchPlugin(Star):
             return jsonify({"success": True, "message": "批量保存成功"})
         except Exception as exc:
             logger.error(f"[模型切换] api_batch_save 失败: {exc}", exc_info=True)
+            return jsonify({"success": False, "error": str(exc)}), 500
+
+    async def api_get_sessions(self):
+        """获取所有活跃会话列表及各会话当前绑定的模型。"""
+        try:
+            sessions = []
+            db_path = Path(get_astrbot_data_path()) / "data_v4.db"
+            if not db_path.exists():
+                return jsonify({"success": True, "sessions": []})
+
+            # 默认全局模型
+            default_model = "默认模型"
+            cmd_cfg_path = Path(get_astrbot_data_path()) / "cmd_config.json"
+            if cmd_cfg_path.exists():
+                try:
+                    with open(cmd_cfg_path, "r", encoding="utf-8-sig") as f:
+                        cfg = json.load(f)
+                    default_model = cfg.get("provider_settings", {}).get("default_provider") or "未设置默认"
+                except Exception:
+                    pass
+
+            with sqlite3.connect(str(db_path)) as conn:
+                cur = conn.cursor()
+                cur.execute("SELECT scope_id, key, value FROM preferences WHERE scope = 'umo'")
+                rows = cur.fetchall()
+
+            session_map = {}
+            for scope_id, key, val_str in rows:
+                if scope_id not in session_map:
+                    session_map[scope_id] = {
+                        "umo": scope_id,
+                        "name": scope_id,
+                        "current_model": default_model,
+                        "is_custom": False,
+                    }
+                try:
+                    data = json.loads(val_str)
+                    val = data.get("val") if isinstance(data, dict) else data
+                except Exception:
+                    val = val_str
+
+                if key == "provider_perf_chat_completion" and val:
+                    session_map[scope_id]["current_model"] = val
+                    session_map[scope_id]["is_custom"] = True
+
+            # 通用会话展示名称解析（适配所有用户的平台与会话格式）
+            # 格式例如: platform:MessageType:id 或 id
+            for umo, s in session_map.items():
+                parts = umo.split(":")
+                platform = parts[0] if len(parts) > 1 else "平台"
+                mtype = parts[1] if len(parts) > 2 else ""
+                target_id = parts[-1]
+
+                if "GroupMessage" in mtype or "group" in umo.lower():
+                    s["name"] = f"👥 [{platform}] 群聊 ({target_id})"
+                elif "FriendMessage" in mtype or "friend" in umo.lower() or "direct" in umo.lower():
+                    # 脱敏展示末尾或首部ID
+                    short_id = f"{target_id[:6]}...{target_id[-4:]}" if len(target_id) > 12 else target_id
+                    s["name"] = f"👤 [{platform}] 私聊 ({short_id})"
+                else:
+                    s["name"] = f"💬 [{platform}] {target_id}"
+
+            sorted_sessions = sorted(
+                session_map.values(),
+                key=lambda x: (0 if "friend" in x["umo"].lower() or "direct" in x["umo"].lower() else 1, x["name"])
+            )
+            return jsonify({"success": True, "sessions": sorted_sessions, "default_model": default_model})
+        except Exception as exc:
+            logger.error(f"[模型切换] api_get_sessions 失败: {exc}", exc_info=True)
+            return jsonify({"success": False, "error": str(exc)}), 500
+
+    async def api_switch_session_model(self):
+        """手动热切换指定会话的运行模型。"""
+        try:
+            data = await request.get_json() or {}
+            umo = str(data.get("umo", "")).strip()
+            provider_id = str(data.get("provider_id", "")).strip()
+            if not umo or not provider_id:
+                return jsonify({"success": False, "error": "umo 与 provider_id 均不能为空"}), 400
+
+            # 校验 provider_id 是否有效
+            enabled = await self.get_enabled_models()
+            valid_ids = {m["provider_id"] for m in enabled}
+            if valid_ids and provider_id not in valid_ids:
+                return jsonify({"success": False, "error": f"模型 `{provider_id}` 未开启"}), 400
+
+            # 获取 AstrBot 内核 provider_manager
+            ctx_obj = getattr(self.context, "context", self.context)
+            if hasattr(ctx_obj, "context"):
+                ctx_obj = ctx_obj.context
+            pm = getattr(ctx_obj, "provider_manager", None)
+            if not pm:
+                return jsonify({"success": False, "error": "未找到内核 provider_manager"}), 500
+
+            await pm.set_provider(
+                provider_id=provider_id,
+                provider_type=ProviderType.CHAT_COMPLETION,
+                umo=umo,
+            )
+            logger.info(f"[模型切换] WebUI 手动热切换会话 [{umo}] 模型为 -> {provider_id}")
+            return jsonify({"success": True, "message": f"已将该会话切换为 {provider_id}"})
+        except Exception as exc:
+            logger.error(f"[模型切换] api_switch_session_model 失败: {exc}", exc_info=True)
             return jsonify({"success": False, "error": str(exc)}), 500
 
     async def terminate(self) -> None:
